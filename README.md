@@ -1,8 +1,8 @@
 # Nexus Manager
 Sonatype Nexus Raw repositories manager
 ## TODO
-- [ ] Create test nexus repository
-- [ ] Create test nexus Raw repository
+- [x] Create test nexus repository
+- [x] Create test nexus Raw repository
 - [ ] Make NexusRawDownload module
 - [ ] Make NexusRawUpload module
 - [ ] Make CLI
