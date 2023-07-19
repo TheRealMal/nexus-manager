@@ -35,7 +35,8 @@ class NexusRawDownload():
         return tasks
     
     # Checks if server is up
-    def _check_server(self) -> None:
+    @staticmethod
+    def _check_server() -> None:
         try:
             r = requests.get(SERVER_URI)
             if not r.ok:
@@ -89,16 +90,63 @@ class NexusRawDownload():
 
 class NexusRawUpload():
     def __init__(self, path: str, version: str, user: str, password: str) -> None:
-        self.user = user
-        self.password = password
+        self.auth = (user, password)
         self.path = path
         self.project_name = path.split("/")[-1]
         self.version = version
+        self.check_server()
+        self._check_repository()
 
+    # Checks if server is up
+    @staticmethod
+    def check_server() -> None:
+        try:
+            r = requests.get(SERVER_URI)
+            if not r.ok:
+                raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
+        except:
+            raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
+    
+    # Checks if repository with provided name exists
+    def _check_repository(self) -> None:
+        reps = requests.get(f"{SERVER_URI}/service/rest/v1/repositories", auth=self.auth).json()
+        for rep in reps:
+            if rep["name"] == self.project_name:
+                return
+        raise IndexError(f"Repository {self.project_name} not found")
+
+    # Get all components
+    # [(os_filepath1, nexus_path1), ...]
+    def _get_all_components(self) -> list:
+        result = []
+        for path, _, files in os.walk(self.path):
+            for name in files:
+                if name == ".DS_Store": continue # Exclude macOS .ds_store files
+                filepath = "/".join((path.replace("\\", "/"), name))
+                result.append((filepath, filepath.replace(self.path, "")[1:]))
+        return result
+    
+    # Uploads component to provided repository
+    def _send_upload_request(self, upload_from: str, endpoint: str):
+        log("Uploading file", endpoint)
+        with open(upload_from, 'rb') as f:
+            data = f.read()
+        r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/{endpoint}", data=data, auth=self.auth)
+        if not r.ok:
+            log(f"Upload failed: Status code {r.status_code}\n{r.text}")
+
+    # Uploads components one by one
+    def start(self) -> None:
+        components = self._get_all_components()
+        for comp in components:
+            self._send_upload_request(comp[0], comp[1])
 
 def main() -> None:
-    a = NexusRawDownload("admin", "", "C:/Users/user/Documents/GitHub/nexus-manager/tests")
-    a.start()
+    # a = NexusRawDownload("admin", "", "C:/Users/user/Documents/GitHub/nexus-manager/tests")
+    # a.start()
+    # b = NexusRawUpload("/Users/therealmal/Downloads/nexus-manager/tests/external/raw-test/raw-test", "0.0.1", "admin", "")
+    # b.start()
+    pass
 
 if __name__ == "__main__":
     main()

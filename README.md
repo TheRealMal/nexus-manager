@@ -3,10 +3,12 @@ Sonatype Nexus Raw repositories manager
 ## TODO
 - [x] Create test nexus repository
 - [x] Create test nexus Raw repository
-- [ ] Make NexusRawDownload module
-- [ ] Make NexusRawUpload module
+- [x] Make NexusRawDownload module
+- [x] Make NexusRawUpload module
+- [ ] Add recursive download function
+- [ ] Add handler for symbol link files
 - [ ] Make CLI
-- [ ] Make whl packer
+- [ ] Make WHL packer
 
 ## Repositories structure
 ```console
