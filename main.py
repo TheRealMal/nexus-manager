@@ -8,6 +8,8 @@ CURRENT_PATH = os.getcwd().replace("\\", "/")
 
 SERVER_URI = "http://localhost:8081"
 
+from private import USER, PASSWORD
+
 def log(*args) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}]", end=" ")
     for arg in args:
@@ -16,6 +18,7 @@ def log(*args) -> None:
 
 class NexusRawDownload():
     def __init__(self, user: str, password: str, filter_options: tuple, config_path: str = CURRENT_PATH, force_download: bool = False) -> None:
+        if config_path.endswith("/"): config_path = config_path[:-1]
         self.auth = (user, password)
         self.config_path = config_path
         self.force_download = force_download
@@ -58,7 +61,10 @@ class NexusRawDownload():
         flag = False
         log(f"Downloading {project_name}-{version}...")
         for comp in rep_components:
-            if comp[0].startswith(f"{project_name}-{version}") and self._filter(comp[0].split("/")[2].split("-")):
+            if comp[0].startswith(f"{project_name}-{version}") and comp[0].split("/")[-1] == ".metadata":
+                self._handle_metadata(project_name, comp[0])
+                flag = True
+            elif comp[0].startswith(f"{project_name}-{version}") and self._filter(comp[0].split("/")[2].split("-")):
                 self._handle_component(project_name, comp[0], comp[1], self.force_download)
                 flag = True
         if flag:
@@ -81,20 +87,70 @@ class NexusRawDownload():
                 return False
         return True
 
+    # Generate path to given component
+    def _generate_filepath(self, component: str) -> str:
+        return '/'.join((self.config_path, "external", '/'.join(component.split('/')[1:])))
+
     # Handle component: generate downloaded file path -> make dirs -> download
     def _handle_component(self, project_name: str, component: str, checksum: str, force_download: bool = False) -> None:
-        filepath = '/'.join((self.config_path, "external", '/'.join(component.split('/')[1:])))
+        filepath = self._generate_filepath(component)
         filedir = f"{self.config_path}/external/{'/'.join(component.split('/')[1:-1])}"
         if not os.path.exists(filedir):
             os.makedirs(filedir)
         if force_download or not os.path.isfile(filepath) or (os.path.isfile(filepath) and sha1(open(filepath,'rb').read()).hexdigest() != checksum):
             self._send_download_request(filepath, f"{project_name}/{component}")
+    
+    # Handle metadata file:
+    def _handle_metadata(self, project_name: str, component: str):
+        filepath = self._generate_filepath(component)
+        self._send_download_request(filepath, f"{project_name}/{component}", False)
+        with open(filepath, "r") as metadata:
+            metadata = metadata.readlines()
+            self._parse_metadata(metadata, project_name)
+        os.remove(filepath)
+
+    # Parses metadata and creates symlinks
+    def _parse_metadata(self, data: list, project_name: str) -> None:
+        current_parent = 0
+        for line in data:
+            line = line.strip().split()
+            if line[0] == "symlinks:":
+                current_parent = 1
+            else:
+                if current_parent == 1:
+                    symlink_path = f"{self.config_path}/external/{project_name}/{line[0]}"
+                    symlink_path_to = self._get_target_path(line[0], line[1], project_name)
+                    if symlink_path_to == None:
+                        log(f"[!] Symlink {line[0]} target out of range; Skipped")
+                        continue
+                    try:
+                        os.symlink(symlink_path_to, symlink_path)
+                        log(f"Saved symlink to {symlink_path}")
+                    except:
+                        pass
+
+    # Gets target path
+    # if absolute -> checks if link to file/dir inside {project_name} dir
+    # if relative -> checks if steps back count < available steps back for symlink path
+    def _get_target_path(self, symlink_path: str, target: str, project_name: str) -> str | None:
+        if os.path.isabs(target):
+            if len(target.split(project_name)) == 1:
+                return None
+            return f"{self.config_path}/external/{project_name}/{target.split(project_name)[1]}"
+        steps_count = len(symlink_path.split("/")) - 1
+        steps_back_count = 0
+        for part in target.split("/"):
+            if part == "..":
+                steps_back_count +=1
+        if steps_back_count > steps_count:
+            return None
+        return target
 
     # Downloads component from rep to given path
-    def _send_download_request(self, download_to_path: str, endpoint: str) -> None:
+    def _send_download_request(self, download_to_path: str, endpoint: str, not_silent: bool = True) -> None:
         r = requests.get(f"{SERVER_URI}/repository/{endpoint}", stream=True, auth=self.auth)
         if r.ok:
-            log("Saving file to", download_to_path)
+            if not_silent: log("Saving file to", download_to_path)
             with open(download_to_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 8):
                     if chunk:
@@ -102,10 +158,11 @@ class NexusRawDownload():
                         f.flush()
                         os.fsync(f.fileno())
             return
-        log(f"Download failed: Status code {r.status_code}\n{download_to_path}\n{r.text}")
+        if not_silent: log(f"Download failed: Status code {r.status_code}\n{download_to_path}\n{r.text}")
 
 class NexusRawUpload():
     def __init__(self, path: str, version: str, user: str, password: str) -> None:
+        if path.endswith("/"): path = path[:-1]
         self.auth = (user, password)
         self.path = path
         self.project_name = path.split("/")[-1]
@@ -142,31 +199,58 @@ class NexusRawUpload():
                 result.append((filepath, filepath.replace(self.path, "")[1:]))
         return result
     
+    # Handle component: uploads if not symlink, else adds component index to list
+    def _handle_component(self, component: tuple, symlinks: list, comp_index: int) -> None:
+        if not os.path.islink(component[0]):
+            self._send_upload_request(component[0], component[1])
+        else:
+            symlinks.append(comp_index)
+
     # Uploads component to provided repository
     def _send_upload_request(self, upload_from: str, endpoint: str):
         log("Uploading file", endpoint)
         with open(upload_from, 'rb') as f:
             data = f.read()
-        r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/{endpoint}", data=data, auth=self.auth)
+        r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/{self.project_name}/{endpoint}", data=data, auth=self.auth)
         if not r.ok:
             log(f"Upload failed: Status code {r.status_code}\n{r.text}")
+
+    # Generates file with all symlinks data
+    def _generate_metadata_file(self, symlinks: list, components: list) -> bytes:
+        text = "symlinks:\n"
+        for i in symlinks:
+            text += f"   {components[i][1]} {os.readlink(components[i][0])}\n"
+        return str.encode(text)
+    
+    # Sends metadata file
+    def _send_metadata_file(self, data: bytes) -> None:
+        r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/.metadata", auth=self.auth, data=data)
+        if not r.ok:
+            log(f"Metadata upload failed: Status code {r.status_code}\n{r.text}")
 
     # Uploads components one by one
     def start(self) -> None:
         components = self._get_all_components()
-        for comp in components:
-            self._send_upload_request(comp[0], comp[1])
+        symlinks = []
+        for _ in range(len(components)):
+            self._handle_component(components[_], symlinks, _)
+        self._send_metadata_file(self._generate_metadata_file(symlinks, components))
 
 def main() -> None:
     a = NexusRawDownload(
-        user="admin",
-        password="",
+        user=USER,
+        password=PASSWORD,
         filter_options=("macos", None, None),
-        config_path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests",
+        config_path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests2",
         force_download=False
     )
     a.start()
-    # b = NexusRawUpload("/Users/therealmal/Downloads/nexus-manager/tests/external/raw-test/raw-test", "0.0.1", "admin", "")
+    # b = NexusRawUpload(
+    #     user=USER,
+    #     password=PASSWORD,
+    #     path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests/external/raw-test",
+    #     version="0.0.2"
+    # )
     # b.start()
     pass
 
