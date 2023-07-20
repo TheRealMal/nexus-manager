@@ -5,6 +5,8 @@ Sonatype Nexus Raw repositories manager
 - [x] Create test nexus Raw repository
 - [x] Make NexusRawDownload module
 - [x] Make NexusRawUpload module
+- [ ] Check existing files (filename + sha1)
+- [ ] Add platform/architecture/target download filter
 - [ ] Add recursive download function
 - [ ] Add handler for symbol link files
 - [ ] Make CLI
