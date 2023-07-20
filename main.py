@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from hashlib import sha1
 import requests
 import os
 
@@ -14,9 +15,11 @@ def log(*args) -> None:
     print(end="\n")
 
 class NexusRawDownload():
-    def __init__(self, user: str, password: str, config_path: str = CURRENT_PATH) -> None:
+    def __init__(self, user: str, password: str, filter_options: tuple, config_path: str = CURRENT_PATH, force_download: bool = False) -> None:
         self.auth = (user, password)
         self.config_path = config_path
+        self.force_download = force_download
+        self.filter = filter_options
         self.tasks = self._parse_config()
         self._check_server()
 
@@ -52,27 +55,40 @@ class NexusRawDownload():
     # Download project function
     def _start_task(self, project_name: str, version: str) -> None:
         rep_components = self._get_rep(project_name, self.auth)
+        flag = False
         log(f"Downloading {project_name}-{version}...")
         for comp in rep_components:
-            if comp.startswith(f"{project_name}-{version}"):
-                self._handle_component(project_name, comp)
-        log(f"Successfully downloaded {project_name}-{version}")
+            if comp[0].startswith(f"{project_name}-{version}") and self._filter(comp[0].split("/")[2].split("-")):
+                self._handle_component(project_name, comp[0], comp[1], self.force_download)
+                flag = True
+        if flag:
+            log(f"Successfully downloaded {project_name}-{version}")
+        else:
+            log(f"Nothing to download for {project_name}-{version}")
 
             
     # Get repository components
     def _get_rep(self, rep_name: str, auth: tuple) -> list:
         r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={rep_name}", auth=auth)
         if r.ok:
-            return [item["name"] for item in r.json()["items"]]
+            return [(item["name"], item["assets"][0]["checksum"]["sha1"]) for item in r.json()["items"]]
         return []
     
+    # Filter components by platform/architecture/target
+    def _filter(self, filter: list) -> bool:
+        for _ in range(3):
+            if self.filter[_] and self.filter[_] != filter[_]:
+                return False
+        return True
+
     # Handle component: generate downloaded file path -> make dirs -> download
-    def _handle_component(self, project_name: str, component: str) -> None:
-        filepath = "/".join((self.config_path, "external", component))
-        filedir = f"{self.config_path}/external/{'/'.join(component.split('/')[:-1])}"
+    def _handle_component(self, project_name: str, component: str, checksum: str, force_download: bool = False) -> None:
+        filepath = '/'.join((self.config_path, "external", '/'.join(component.split('/')[1:])))
+        filedir = f"{self.config_path}/external/{'/'.join(component.split('/')[1:-1])}"
         if not os.path.exists(filedir):
             os.makedirs(filedir)
-        self._send_download_request(filepath, f"{project_name}/{component}")
+        if force_download or not os.path.isfile(filepath) or (os.path.isfile(filepath) and sha1(open(filepath,'rb').read()).hexdigest() != checksum):
+            self._send_download_request(filepath, f"{project_name}/{component}")
 
     # Downloads component from rep to given path
     def _send_download_request(self, download_to_path: str, endpoint: str) -> None:
@@ -86,7 +102,7 @@ class NexusRawDownload():
                         f.flush()
                         os.fsync(f.fileno())
             return
-        log(f"Download failed: Status code {r.status_code}\n{r.text}")
+        log(f"Download failed: Status code {r.status_code}\n{download_to_path}\n{r.text}")
 
 class NexusRawUpload():
     def __init__(self, path: str, version: str, user: str, password: str) -> None:
@@ -142,8 +158,14 @@ class NexusRawUpload():
             self._send_upload_request(comp[0], comp[1])
 
 def main() -> None:
-    # a = NexusRawDownload("admin", "", "C:/Users/user/Documents/GitHub/nexus-manager/tests")
-    # a.start()
+    a = NexusRawDownload(
+        user="admin",
+        password="",
+        filter_options=("macos", None, None),
+        config_path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests",
+        force_download=False
+    )
+    a.start()
     # b = NexusRawUpload("/Users/therealmal/Downloads/nexus-manager/tests/external/raw-test/raw-test", "0.0.1", "admin", "")
     # b.start()
     pass
