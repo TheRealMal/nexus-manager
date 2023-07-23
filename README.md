@@ -7,8 +7,8 @@ Sonatype Nexus Raw repositories manager
 - [x] Check existing files (filename + sha1)
 - [x] Add platform/architecture/target download filter
 - [ ] Add config for server and user credentials
-- [ ] Add merge support for future CLI (--merge={manual, replace, overwrite, append})
-- [ ] Add recursive download function
+- [x] Add merge support for future CLI (--merge={manual, replace, overwrite, append})
+- [x] Add recursive download function
 - [x] Add handler for symbol link files
 - [ ] Make CLI
 - [ ] Make WHL packer

@@ -49,7 +49,27 @@ class NexusRawDownload():
                 raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
         except:
             raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
-        
+    
+    # Parses all dirs recursively
+    def _parse_dirs(self, path: str, all_paths: list[str]) -> None:
+        for p in os.scandir(path):
+            if p.is_dir():
+                all_paths.append(p.path)
+                self._parse_dirs(p, all_paths)
+
+    # Parses all dirs, then self.start for dirs w/ correct config file
+    def start_recursive(self) -> None:
+        current_paths = [self.config_path]
+        self._parse_dirs(self.config_path, current_paths)
+        for path in current_paths:
+            try:
+                self.config_path = path
+                self.tasks = self._parse_config()
+            except FileNotFoundError:
+                log(f"Not found/Wrong config file in {path}")
+                continue
+            self.start()
+
     # Downloads projects one by one
     def start(self) -> None:
         for task in self.tasks:
@@ -57,7 +77,7 @@ class NexusRawDownload():
 
     # Download project function
     def _start_task(self, project_name: str, version: str) -> None:
-        rep_components = self._get_rep(project_name, self.auth)
+        rep_components = self._get_rep(project_name)
         flag = False
         log(f"Downloading {project_name}-{version}...")
         for comp in rep_components:
@@ -74,8 +94,8 @@ class NexusRawDownload():
 
             
     # Get repository components
-    def _get_rep(self, rep_name: str, auth: tuple) -> list:
-        r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={rep_name}", auth=auth)
+    def _get_rep(self, rep_name: str) -> list:
+        r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={rep_name}", auth=self.auth)
         if r.ok:
             return [(item["name"], item["assets"][0]["checksum"]["sha1"]) for item in r.json()["items"]]
         return []
@@ -150,7 +170,7 @@ class NexusRawDownload():
     def _send_download_request(self, download_to_path: str, endpoint: str, not_silent: bool = True) -> None:
         r = requests.get(f"{SERVER_URI}/repository/{endpoint}", stream=True, auth=self.auth)
         if r.ok:
-            if not_silent: log("Saving file to", download_to_path)
+            if not_silent: log("Saving component to", download_to_path)
             with open(download_to_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 8):
                     if chunk:
@@ -161,15 +181,32 @@ class NexusRawDownload():
         if not_silent: log(f"Download failed: Status code {r.status_code}\n{download_to_path}\n{r.text}")
 
 class NexusRawUpload():
-    def __init__(self, path: str, version: str, user: str, password: str) -> None:
+    def __init__(self, path: str, version: str, user: str, password: str, merge: str = "manual") -> None:
         if path.endswith("/"): path = path[:-1]
         self.auth = (user, password)
         self.path = path
         self.project_name = path.split("/")[-1]
         self.version = version
+        self.merge = self._prepare_merge(merge)
         self.check_server()
         self._check_repository()
 
+    # Prepares merge variable
+    @staticmethod
+    def _prepare_merge(merge: str) -> int:
+        if merge == "manual":
+            x = input("Replace package?[y/N]")
+            if x == "y":
+                return 1
+            return 0
+        elif merge == "replace":
+            return 1
+        elif merge == "overwrite":
+            return 2
+        elif merge == "append":
+            return 3
+        raise ModuleNotFoundError("Wrong merge method")
+    
     # Checks if server is up
     @staticmethod
     def check_server() -> None:
@@ -187,7 +224,18 @@ class NexusRawUpload():
             if rep["name"] == self.project_name:
                 return
         raise IndexError(f"Repository {self.project_name} not found")
-
+    
+    # Get repository components to be removed
+    def _get_delete_rep(self) -> list:
+        r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={self.project_name}", auth=self.auth)
+        if r.ok:
+            result = []
+            for item in r.json()["items"]:
+                if item["name"].startswith(f"{self.project_name}-{self.version}"):
+                    result.append((item["id"], item["name"]))
+            return result
+        return []
+    
     # Get all components
     # [(os_filepath1, nexus_path1), ...]
     def _get_all_components(self) -> list:
@@ -202,13 +250,52 @@ class NexusRawUpload():
     # Handle component: uploads if not symlink, else adds component index to list
     def _handle_component(self, component: tuple, symlinks: list, comp_index: int) -> None:
         if not os.path.islink(component[0]):
-            self._send_upload_request(component[0], component[1])
+            comp_id = self._get_component_id(component[1])
+            if self._handle_merge(comp_id):
+                self._send_upload_request(component[0], component[1])
         else:
             symlinks.append(comp_index)
 
+    # Handle merge logic & user questions
+    def _handle_merge(self, comp_id: str | None) -> bool:
+        if self.merge == 0: # Manual
+            if comp_id == None:
+                return True
+            tmp = input("Overwrite?[y/o/a/N]")
+            if tmp == "y":
+                return True
+            elif tmp == "o":
+                self.merge = 2
+                return True
+            elif tmp == "a":
+                self.merge = 3
+                if comp_id == None:
+                    return True
+                return False
+            elif tmp == "N":
+                return False
+        elif self.merge == 1: # Replace: upload all files
+            return True
+        elif self.merge == 2: # Overwrite: upload all files
+            return True
+        elif self.merge == 3: # Append: upload if comp_id == None
+            if comp_id == None:
+                return True
+            return False
+
+    # Get component from repository
+    def _get_component_id(self, endpoint: str) -> str | None:
+        comp_path = f"{self.project_name}-{self.version}/{self.project_name}/{endpoint}"
+        r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={self.project_name}", auth=self.auth)
+        if r.ok:
+            for item in r.json()["items"]:
+                if item["name"] == comp_path:
+                    return item["id"]
+        return None
+        
     # Uploads component to provided repository
     def _send_upload_request(self, upload_from: str, endpoint: str):
-        log("Uploading file", endpoint)
+        log("Uploading component", endpoint)
         with open(upload_from, 'rb') as f:
             data = f.read()
         r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/{self.project_name}/{endpoint}", data=data, auth=self.auth)
@@ -227,31 +314,44 @@ class NexusRawUpload():
         r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/.metadata", auth=self.auth, data=data)
         if not r.ok:
             log(f"Metadata upload failed: Status code {r.status_code}\n{r.text}")
+    
+    # Sends delete component request
+    def _delete_comp(self, comp_id: str, comp_path: str) -> None:
+        r = requests.delete(f"{SERVER_URI}/service/rest/v1/components/{comp_id}", auth=self.auth)
+        log(f"Deleted component {comp_path}")
 
     # Uploads components one by one
     def start(self) -> None:
+        if self.merge == 1:
+            log(f"Removing old {self.project_name}-{self.version}...")
+            remove_comps = self._get_delete_rep()
+            for comp in remove_comps:
+                self._delete_comp(comp[0], comp[1])
+            log(f"Successfully removed old {self.project_name}-{self.version}")
         components = self._get_all_components()
         symlinks = []
+        log(f"Uploading {self.project_name}-{self.version}...")
         for _ in range(len(components)):
             self._handle_component(components[_], symlinks, _)
         self._send_metadata_file(self._generate_metadata_file(symlinks, components))
-
+        log(f"Successfully uploaded {self.project_name}-{self.version}")
 def main() -> None:
-    a = NexusRawDownload(
-        user=USER,
-        password=PASSWORD,
-        filter_options=("macos", None, None),
-        config_path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests2",
-        force_download=False
-    )
-    a.start()
-    # b = NexusRawUpload(
+    # a = NexusRawDownload(
     #     user=USER,
     #     password=PASSWORD,
-    #     path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests/external/raw-test",
-    #     version="0.0.2"
+    #     filter_options=("macos", None, None),
+    #     config_path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests2",
+    #     force_download=False
     # )
-    # b.start()
+    # a.start_recursive()
+    b = NexusRawUpload(
+        user=USER,
+        password=PASSWORD,
+        path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests2/external/raw-test",
+        version="0.0.2",
+        merge="replace"
+    )
+    b.start()
     pass
 
 if __name__ == "__main__":
