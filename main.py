@@ -401,24 +401,24 @@ def check_arguments(args):
             exit(1)
 
 def get_arguments():
-    parser = ArgumentParser(description="Script for download & upload binary dependencies")
-    parser.add_argument('command', metavar='COMMAND', help="One of the following commands: download, upload, config", type=str, nargs='?', choices=["download", "upload", "config"])
-    parser.add_argument("-a", "--auth", help="Nexus user credentials <USER>:<PASSWORD>", type=str, required=False, default="")
+    parser = ArgumentParser(description="Script for download & upload binary dependencies.")
+    parser.add_argument('command', metavar='COMMAND', help="One of the following commands: download, upload, config.", type=str, nargs='?', choices=["download", "upload", "config"])
+    parser.add_argument("-a", "--auth", help="Nexus user credentials <USER>:<PASSWORD>.", type=str, required=False, default="")
     # Upload arguments
-    parser.add_argument("-v", "--version", help="Version tag", type=str, required=False)
-    parser.add_argument("-p", "--path", help="Path to project that will be uploaded", type=str, required=False)
-    parser.add_argument("-m", "--merge", help="Merge argument", type=str, required=False, choices=["manual", "replace", "overwrite", "append"],default="manual")
+    parser.add_argument("-v", "--version", help="Version tag.", type=str, required=False)
+    parser.add_argument("-p", "--path", help="Path to project that will be uploaded.", type=str, required=False)
+    parser.add_argument("-m", "--merge", help="Merge argument.", type=str, required=False, choices=["manual", "replace", "overwrite", "append"],default="manual")
     # Download arguments
-    parser.add_argument("-fp", "--platform", help="Download platform filter", type=str, required=False, default="")
-    parser.add_argument("-fa", "--architecture", help="Download architecture filter", type=str, required=False, default="")
-    parser.add_argument("-ft", "--target", help="Download target filter", type=str, required=False, default="")
-    parser.add_argument("-e", "--external_config", help="Path to external.config", type=str, required=False, default="")
-    parser.add_argument("-r", "--recursive", help="Do recursive download", required=False, action="store_true")
-    parser.add_argument("-fd", "--force_download", help="Replaces all files when downloading", required=False, action="store_true")
+    parser.add_argument("-fp", "--platform", help="Download platform filter.", type=str, required=False, default="")
+    parser.add_argument("-fa", "--architecture", help="Download architecture filter.", type=str, required=False, default="")
+    parser.add_argument("-ft", "--target", help="Download target filter.", type=str, required=False, default="")
+    parser.add_argument("-e", "--external_config", help="Path to external.config directory.", type=str, required=False, default="")
+    parser.add_argument("-r", "--recursive", help="Do recursive download.", required=False, action="store_true")
+    parser.add_argument("-fd", "--force_download", help="Replaces all files when downloading.", required=False, action="store_true")
     # Configure arguments
-    parser.add_argument("-ca", "--config_auth", help="Configure auth credentials", type=str, required=False, default="")
-    parser.add_argument("-cs", "--config_server", help="Configure server uri", type=str, required=False, default="http://localhost:8081")
-    parser.add_argument("-cp", "--config_print", help="Prints current config settings", required=False, action="store_true")
+    parser.add_argument("-ca", "--config_auth", help="Configure auth credentials.", type=str, required=False, default="")
+    parser.add_argument("-cs", "--config_server", help="Configure server uri.", type=str, required=False, default="http://localhost:8081")
+    parser.add_argument("-cp", "--config_print", help="Prints current config settings.", required=False, action="store_true")
     return parser.parse_args()
 
 def main() -> None:
