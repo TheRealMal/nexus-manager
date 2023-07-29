@@ -1,13 +1,36 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from argparse import ArgumentParser
 from datetime import datetime
 from hashlib import sha1
 import requests
+import json
 import os
 
 CURRENT_PATH = os.getcwd().replace("\\", "/")
 
-SERVER_URI = "http://localhost:8081"
+if os.name == "nt":
+    CONFIG_PATH = '/'.join((os.environ["ProgramData"].replace("\\", "/"), "nexus-manager"))
+elif os.name == "posix":
+    CONFIG_PATH = f"/Users/{os.getlogin()}/Library/Preferences"
+else:
+    CONFIG_PATH = "/etc/nexus-manager"
 
+CONFIG_DATA = {
+    "AUTH": "",
+    "SERVER_URI": "http://localhost:8081"
+}
+
+if not os.path.exists(CONFIG_PATH):
+    os.mkdir(CONFIG_PATH)
+
+if not os.path.isfile(f"{CONFIG_PATH}/config.json"):
+    with open(f"{CONFIG_PATH}/config.json", "w") as f:
+        json.dump(CONFIG_DATA, f)
+else:
+    with open(f"{CONFIG_PATH}/config.json", "r") as f:
+        CONFIG_DATA = json.load(f)
+        
 from private import USER, PASSWORD
 
 def log(*args) -> None:
@@ -15,6 +38,14 @@ def log(*args) -> None:
     for arg in args:
         print(arg, end=" ")
     print(end="\n")
+
+def update_config(key: str, value: str) -> None:
+    CONFIG_DATA[key] = value
+    with open(f"{CONFIG_PATH}/config.json", "w") as f:
+        json.dump(CONFIG_DATA, f)
+
+def print_config() -> None:
+    print(f"Auth: {CONFIG_DATA['AUTH']}\nServer URI: {CONFIG_DATA['SERVER_URI']}")
 
 class NexusRawDownload():
     def __init__(self, user: str, password: str, filter_options: tuple, config_path: str = CURRENT_PATH, force_download: bool = False) -> None:
@@ -41,14 +72,13 @@ class NexusRawDownload():
         return tasks
     
     # Checks if server is up
-    @staticmethod
-    def _check_server() -> None:
+    def _check_server(self) -> None:
         try:
-            r = requests.get(SERVER_URI)
+            r = requests.get(CONFIG_DATA['SERVER_URI'], auth=self.auth)
             if not r.ok:
-                raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
+                raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
         except:
-            raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
+            raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
     
     # Parses all dirs recursively
     def _parse_dirs(self, path: str, all_paths: list[str]) -> None:
@@ -95,7 +125,7 @@ class NexusRawDownload():
             
     # Get repository components
     def _get_rep(self, rep_name: str) -> list:
-        r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={rep_name}", auth=self.auth)
+        r = requests.get(f"{CONFIG_DATA['SERVER_URI']}/service/rest/v1/components?repository={rep_name}", auth=self.auth)
         if r.ok:
             return [(item["name"], item["assets"][0]["checksum"]["sha1"]) for item in r.json()["items"]]
         return []
@@ -103,7 +133,7 @@ class NexusRawDownload():
     # Filter components by platform/architecture/target
     def _filter(self, filter: list) -> bool:
         for _ in range(3):
-            if self.filter[_] and self.filter[_] != filter[_]:
+            if len(self.filter[_]) != 0 and self.filter[_] != filter[_]:
                 return False
         return True
 
@@ -168,7 +198,7 @@ class NexusRawDownload():
 
     # Downloads component from rep to given path
     def _send_download_request(self, download_to_path: str, endpoint: str, not_silent: bool = True) -> None:
-        r = requests.get(f"{SERVER_URI}/repository/{endpoint}", stream=True, auth=self.auth)
+        r = requests.get(f"{CONFIG_DATA['SERVER_URI']}/repository/{endpoint}", stream=True, auth=self.auth)
         if r.ok:
             if not_silent: log("Saving component to", download_to_path)
             with open(download_to_path, "wb") as f:
@@ -208,18 +238,17 @@ class NexusRawUpload():
         raise ModuleNotFoundError("Wrong merge method")
     
     # Checks if server is up
-    @staticmethod
-    def check_server() -> None:
+    def check_server(self) -> None:
         try:
-            r = requests.get(SERVER_URI)
+            r = requests.get(CONFIG_DATA['SERVER_URI'], auth=self.auth)
             if not r.ok:
-                raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
+                raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
         except:
-            raise ConnectionRefusedError(f"Server {SERVER_URI} check failed")
+            raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
     
     # Checks if repository with provided name exists
     def _check_repository(self) -> None:
-        reps = requests.get(f"{SERVER_URI}/service/rest/v1/repositories", auth=self.auth).json()
+        reps = requests.get(f"{CONFIG_DATA['SERVER_URI']}/service/rest/v1/repositories", auth=self.auth).json()
         for rep in reps:
             if rep["name"] == self.project_name:
                 return
@@ -227,7 +256,7 @@ class NexusRawUpload():
     
     # Get repository components to be removed
     def _get_delete_rep(self) -> list:
-        r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={self.project_name}", auth=self.auth)
+        r = requests.get(f"{CONFIG_DATA['SERVER_URI']}/service/rest/v1/components?repository={self.project_name}", auth=self.auth)
         if r.ok:
             result = []
             for item in r.json()["items"]:
@@ -286,7 +315,7 @@ class NexusRawUpload():
     # Get component from repository
     def _get_component_id(self, endpoint: str) -> str | None:
         comp_path = f"{self.project_name}-{self.version}/{self.project_name}/{endpoint}"
-        r = requests.get(f"{SERVER_URI}/service/rest/v1/components?repository={self.project_name}", auth=self.auth)
+        r = requests.get(f"{CONFIG_DATA['SERVER_URI']}/service/rest/v1/components?repository={self.project_name}", auth=self.auth)
         if r.ok:
             for item in r.json()["items"]:
                 if item["name"] == comp_path:
@@ -298,7 +327,7 @@ class NexusRawUpload():
         log("Uploading component", endpoint)
         with open(upload_from, 'rb') as f:
             data = f.read()
-        r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/{self.project_name}/{endpoint}", data=data, auth=self.auth)
+        r = requests.put(f"{CONFIG_DATA['SERVER_URI']}/repository/{self.project_name}/{self.project_name}-{self.version}/{self.project_name}/{endpoint}", data=data, auth=self.auth)
         if not r.ok:
             log(f"Upload failed: Status code {r.status_code}\n{r.text}")
 
@@ -311,13 +340,13 @@ class NexusRawUpload():
     
     # Sends metadata file
     def _send_metadata_file(self, data: bytes) -> None:
-        r = requests.put(f"{SERVER_URI}/repository/{self.project_name}/{self.project_name}-{self.version}/.metadata", auth=self.auth, data=data)
+        r = requests.put(f"{CONFIG_DATA['SERVER_URI']}/repository/{self.project_name}/{self.project_name}-{self.version}/.metadata", auth=self.auth, data=data)
         if not r.ok:
             log(f"Metadata upload failed: Status code {r.status_code}\n{r.text}")
     
     # Sends delete component request
     def _delete_comp(self, comp_id: str, comp_path: str) -> None:
-        r = requests.delete(f"{SERVER_URI}/service/rest/v1/components/{comp_id}", auth=self.auth)
+        r = requests.delete(f"{CONFIG_DATA['SERVER_URI']}/service/rest/v1/components/{comp_id}", auth=self.auth)
         log(f"Deleted component {comp_path}")
 
     # Uploads components one by one
@@ -335,24 +364,96 @@ class NexusRawUpload():
             self._handle_component(components[_], symlinks, _)
         self._send_metadata_file(self._generate_metadata_file(symlinks, components))
         log(f"Successfully uploaded {self.project_name}-{self.version}")
+
+
+def check_arguments(args):
+    if not args.command:
+        print("Error, provide one of following commands: download, upload, config")
+        exit(1)
+    if not args.auth and CONFIG_DATA["AUTH"] == "" and (args.command != "config" and not args.config_print):
+        print("Error, provide auth credentials or update config")
+        exit(1)
+    if args.command == "upload":
+        if not args.version:
+            print("Error, provide version tag using --version")
+            exit(1)
+        if not args.path:
+            print("Error, provide path to project using --path")
+            exit(1)
+    elif args.command == "config":
+        if not args.config_auth and not args.config_server:
+            print("Error, provide new auth (--config_auth) or new server uri (--config_server)")
+            exit(1)
+
+def get_arguments():
+    parser = ArgumentParser(description="Script for download & upload binary dependencies")
+    parser.add_argument('command', metavar='COMMAND', help="One of the following commands: download, upload, config", type=str, nargs='?', choices=["download", "upload", "config"])
+    parser.add_argument("-a", "--auth", help="Nexus user credentials <USER>:<PASSWORD>", type=str, required=False, default="")
+    # Upload arguments
+    parser.add_argument("-v", "--version", help="Version tag", type=str, required=False)
+    parser.add_argument("-p", "--path", help="Path to project that will be uploaded", type=str, required=False)
+    parser.add_argument("-m", "--merge", help="Merge argument", type=str, required=False, choices=["manual", "replace", "overwrite", "append"],default="manual")
+    # Download arguments
+    parser.add_argument("-fp", "--platform", help="Download platform filter", type=str, required=False, default="")
+    parser.add_argument("-fa", "--architecture", help="Download architecture filter", type=str, required=False, default="")
+    parser.add_argument("-ft", "--target", help="Download target filter", type=str, required=False, default="")
+    parser.add_argument("-e", "--external_config", help="Path to external.config", type=str, required=False, default="")
+    parser.add_argument("-r", "--recursive", help="Do recursive download", required=False, action="store_true")
+    # Configure arguments
+    parser.add_argument("-ca", "--config_auth", help="Configure auth credentials", type=str, required=False, default="")
+    parser.add_argument("-cs", "--config_server", help="Configure server uri", type=str, required=False, default="http://localhost:8081")
+    parser.add_argument("-cp", "--config_print", help="Prints current config settings", required=False, action="store_true")
+    return parser.parse_args()
+
 def main() -> None:
-    # a = NexusRawDownload(
-    #     user=USER,
-    #     password=PASSWORD,
-    #     filter_options=("macos", None, None),
-    #     config_path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests2",
-    #     force_download=False
-    # )
-    # a.start_recursive()
-    b = NexusRawUpload(
-        user=USER,
-        password=PASSWORD,
-        path="/Users/therealmal/Desktop/Workspace/nexus-manager/tests2/external/raw-test",
-        version="0.0.2",
-        merge="replace"
-    )
-    b.start()
-    pass
+    args = get_arguments()
+    check_arguments(args)
+    if args.command == "download":
+        if not args.auth:
+            p = NexusRawDownload(
+                user=CONFIG_DATA["AUTH"].split(":")[0],
+                password=CONFIG_DATA["AUTH"].split(":")[1],
+                filter_options=(args.platform, args.architecture, args.target),
+                config_path=args.external_config,
+                force_download=False
+            )
+        else:
+            p = NexusRawDownload(
+                user=args.auth.split(":")[0],
+                password=args.auth.split(":")[1],
+                filter_options=(args.platform, args.architecture, args.target),
+                config_path=args.external_config,
+                force_download=False
+            )
+        if args.recursive:
+            p.start_recursive()
+        else:
+            p.start()
+    elif args.command == "upload":
+        if not args.auth:
+            p = NexusRawUpload(
+                user=CONFIG_DATA["AUTH"].split(":")[0],
+                password=CONFIG_DATA["AUTH"].split(":")[1],
+                path=args.path,
+                version=args.version,
+                merge=args.merge
+            )
+        else:
+            p = NexusRawUpload(
+                user=args.auth.split(":")[0],
+                password=args.auth.split(":")[1],
+                path=args.path,
+                version=args.version,
+                merge=args.merge
+            )
+        p.start()
+    elif args.command == "config":
+        if args.config_print:
+            print_config()
+        if args.config_auth:
+            update_config("AUTH", args.config_auth)
+        if args.config_server:
+            update_config("SERVER_URI", args.config_server)
 
 if __name__ == "__main__":
     main()
