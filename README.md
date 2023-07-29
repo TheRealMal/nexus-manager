@@ -2,7 +2,7 @@
 Sonatype Nexus Raw repositories manager
 ## Usage
 ```console
-nexus-manager <COMMAND> [FLAGS]
+nexmanager <COMMAND> [FLAGS]
 ```
 ## Commands
 | Command name | Utility                                            |
@@ -63,6 +63,11 @@ ${projectName1}
 ${projectName2}
 	...
 ```
+## Build and setup whl file
+```console
+python3 setup.py bdist_wheel
+pip install Nexus_Manager-<version>-<params>.whl
+```
 ## TODO
 - [x] Create test nexus Raw repository
 - [x] Make NexusRawDownload module
@@ -74,5 +79,5 @@ ${projectName2}
 - [x] Add handler for symbol link files
 - [x] Make CLI
 - [x] Add config for server and user credentials
-- [ ] Make WHL packer
+- [x] Make WHL packer
 
