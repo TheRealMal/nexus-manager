@@ -23,10 +23,10 @@ Project version tag.
 Path to project that will be uploaded
 -m --merge (Optional)
 Merge parameter
-  manual - Choose what to do while uploading every component
-  replace - Remove provided project version and upload a new one
+  manual    - Choose what to do while uploading every component
+  replace   - Remove provided project version and upload a new one
   overwrite - Overwrite files if they exist
-  append - Upload only new files
+  append    - Upload only new files
 
 # Download flags:
 -fp --platform (Optional)
