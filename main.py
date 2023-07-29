@@ -30,8 +30,6 @@ if not os.path.isfile(f"{CONFIG_PATH}/config.json"):
 else:
     with open(f"{CONFIG_PATH}/config.json", "r") as f:
         CONFIG_DATA = json.load(f)
-        
-from private import USER, PASSWORD
 
 def log(*args) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}]", end=" ")
@@ -58,10 +56,14 @@ class NexusRawDownload():
         self._check_server()
 
     # Parses config file at initialisation
-    def _parse_config(self) -> list:
+    def _parse_config(self, recursive: bool = False) -> list:
         tasks = []
         if not os.path.isfile(f"{self.config_path}/external.config"):
-            raise FileNotFoundError(f"Config file not found")
+            if recursive:
+                raise FileNotFoundError
+            else:
+                log("external.config file not found in provided directory")
+                exit(1)
         with open(f"{self.config_path}/external.config", "r") as f:
             for line in f.readlines():
                 line = line.strip().split("#")[0]
@@ -76,9 +78,11 @@ class NexusRawDownload():
         try:
             r = requests.get(CONFIG_DATA['SERVER_URI'], auth=self.auth)
             if not r.ok:
-                raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+                log(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+                exit(1)
         except:
-            raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+            log(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+            exit(1)
     
     # Parses all dirs recursively
     def _parse_dirs(self, path: str, all_paths: list[str]) -> None:
@@ -94,7 +98,7 @@ class NexusRawDownload():
         for path in current_paths:
             try:
                 self.config_path = path
-                self.tasks = self._parse_config()
+                self.tasks = self._parse_config(recursive=True)
             except FileNotFoundError:
                 log(f"Not found/Wrong config file in {path}")
                 continue
@@ -113,7 +117,6 @@ class NexusRawDownload():
         for comp in rep_components:
             if comp[0].startswith(f"{project_name}-{version}") and comp[0].split("/")[-1] == ".metadata":
                 self._handle_metadata(project_name, comp[0])
-                flag = True
             elif comp[0].startswith(f"{project_name}-{version}") and self._filter(comp[0].split("/")[2].split("-")):
                 self._handle_component(project_name, comp[0], comp[1], self.force_download)
                 flag = True
@@ -168,16 +171,22 @@ class NexusRawDownload():
                 current_parent = 1
             else:
                 if current_parent == 1:
-                    symlink_path = f"{self.config_path}/external/{project_name}/{line[0]}"
-                    symlink_path_to = self._get_target_path(line[0], line[1], project_name)
-                    if symlink_path_to == None:
-                        log(f"[!] Symlink {line[0]} target out of range; Skipped")
-                        continue
-                    try:
-                        os.symlink(symlink_path_to, symlink_path)
-                        log(f"Saved symlink to {symlink_path}")
-                    except:
-                        pass
+                    if self._filter(line[0].split("/")[0].split("-")):
+                        symlink_path = f"{self.config_path}/external/{project_name}/{line[0]}"
+                        symlink_path_to = self._get_target_path(line[0], line[1], project_name)
+                        if symlink_path_to == None:
+                            log(f"[!] Symlink {line[0]} target out of range; Skipped")
+                            continue
+                        try:
+                            os.symlink(symlink_path_to, symlink_path)
+                            log(f"Saved symlink to {symlink_path}")
+                        except FileExistsError:
+                            pass
+                        except OSError:
+                            log(f"Possibly no permissions to create symlinks: {symlink_path}")
+                        except Exception as e:
+                            log(f"Something went wrong while creating symlink {symlink_path}")
+                            print(e)
 
     # Gets target path
     # if absolute -> checks if link to file/dir inside {project_name} dir
@@ -200,7 +209,7 @@ class NexusRawDownload():
     def _send_download_request(self, download_to_path: str, endpoint: str, not_silent: bool = True) -> None:
         r = requests.get(f"{CONFIG_DATA['SERVER_URI']}/repository/{endpoint}", stream=True, auth=self.auth)
         if r.ok:
-            if not_silent: log("Saving component to", download_to_path)
+            if not_silent: log("Downloading component to", download_to_path)
             with open(download_to_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 8):
                     if chunk:
@@ -225,7 +234,7 @@ class NexusRawUpload():
     @staticmethod
     def _prepare_merge(merge: str) -> int:
         if merge == "manual":
-            x = input("Replace package?[y/N]")
+            x = input("Replace package?[y/N]\n")
             if x == "y":
                 return 1
             return 0
@@ -235,16 +244,19 @@ class NexusRawUpload():
             return 2
         elif merge == "append":
             return 3
-        raise ModuleNotFoundError("Wrong merge method")
+        log("Wrong merge method")
+        exit(1)
     
     # Checks if server is up
     def check_server(self) -> None:
         try:
             r = requests.get(CONFIG_DATA['SERVER_URI'], auth=self.auth)
             if not r.ok:
-                raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+                log(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+                exit(1)
         except:
-            raise ConnectionRefusedError(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+            log(f"Server {CONFIG_DATA['SERVER_URI']} check failed")
+            exit(1)
     
     # Checks if repository with provided name exists
     def _check_repository(self) -> None:
@@ -252,7 +264,8 @@ class NexusRawUpload():
         for rep in reps:
             if rep["name"] == self.project_name:
                 return
-        raise IndexError(f"Repository {self.project_name} not found")
+        log(f"Repository {self.project_name} not found")
+        exit(1)
     
     # Get repository components to be removed
     def _get_delete_rep(self) -> list:
@@ -280,17 +293,17 @@ class NexusRawUpload():
     def _handle_component(self, component: tuple, symlinks: list, comp_index: int) -> None:
         if not os.path.islink(component[0]):
             comp_id = self._get_component_id(component[1])
-            if self._handle_merge(comp_id):
+            if self._handle_merge(comp_id, component[1]):
                 self._send_upload_request(component[0], component[1])
         else:
             symlinks.append(comp_index)
 
     # Handle merge logic & user questions
-    def _handle_merge(self, comp_id: str | None) -> bool:
+    def _handle_merge(self, comp_id: str | None, comp_name: str | None) -> bool:
         if self.merge == 0: # Manual
             if comp_id == None:
                 return True
-            tmp = input("Overwrite?[y/o/a/N]")
+            tmp = input(f"Overwrite {comp_name}?[y/o/a/N]\n")
             if tmp == "y":
                 return True
             elif tmp == "o":
@@ -347,21 +360,23 @@ class NexusRawUpload():
     # Sends delete component request
     def _delete_comp(self, comp_id: str, comp_path: str) -> None:
         r = requests.delete(f"{CONFIG_DATA['SERVER_URI']}/service/rest/v1/components/{comp_id}", auth=self.auth)
-        log(f"Deleted component {comp_path}")
+        log(f"Removed component {comp_path}")
 
     # Uploads components one by one
     def start(self) -> None:
         if self.merge == 1:
-            log(f"Removing old {self.project_name}-{self.version}...")
             remove_comps = self._get_delete_rep()
-            for comp in remove_comps:
-                self._delete_comp(comp[0], comp[1])
-            log(f"Successfully removed old {self.project_name}-{self.version}")
+            if len(remove_comps) != 0:
+                log(f"Removing old {self.project_name}-{self.version}...")
+                for comp in remove_comps:
+                    self._delete_comp(comp[0], comp[1])
+                log(f"Successfully removed old {self.project_name}-{self.version}")
         components = self._get_all_components()
         symlinks = []
         log(f"Uploading {self.project_name}-{self.version}...")
         for _ in range(len(components)):
             self._handle_component(components[_], symlinks, _)
+        log(f"Uploading metadata file...")
         self._send_metadata_file(self._generate_metadata_file(symlinks, components))
         log(f"Successfully uploaded {self.project_name}-{self.version}")
 
@@ -399,6 +414,7 @@ def get_arguments():
     parser.add_argument("-ft", "--target", help="Download target filter", type=str, required=False, default="")
     parser.add_argument("-e", "--external_config", help="Path to external.config", type=str, required=False, default="")
     parser.add_argument("-r", "--recursive", help="Do recursive download", required=False, action="store_true")
+    parser.add_argument("-fd", "--force_download", help="Replaces all files when downloading", required=False, action="store_true")
     # Configure arguments
     parser.add_argument("-ca", "--config_auth", help="Configure auth credentials", type=str, required=False, default="")
     parser.add_argument("-cs", "--config_server", help="Configure server uri", type=str, required=False, default="http://localhost:8081")
@@ -415,7 +431,7 @@ def main() -> None:
                 password=CONFIG_DATA["AUTH"].split(":")[1],
                 filter_options=(args.platform, args.architecture, args.target),
                 config_path=args.external_config,
-                force_download=False
+                force_download=args.force_download
             )
         else:
             p = NexusRawDownload(
@@ -423,7 +439,7 @@ def main() -> None:
                 password=args.auth.split(":")[1],
                 filter_options=(args.platform, args.architecture, args.target),
                 config_path=args.external_config,
-                force_download=False
+                force_download=args.force_download
             )
         if args.recursive:
             p.start_recursive()
