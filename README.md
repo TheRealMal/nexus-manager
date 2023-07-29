@@ -77,7 +77,7 @@ pip install Nexus_Manager-<version>-<params>.whl
 - [x] Add merge support for future CLI (--merge={manual, replace, overwrite, append})
 - [x] Add recursive download function
 - [x] Add handler for symbol link files
-- [x] Make CLI
+- [x] Make command line interface
 - [x] Add config for server and user credentials
-- [x] Make WHL packer
+- [x] Build WHL file
 
