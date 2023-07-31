@@ -5,6 +5,7 @@ from datetime import datetime
 from hashlib import sha1
 import requests
 import json
+import enum
 import os
 
 CURRENT_PATH = os.getcwd().replace("\\", "/")
@@ -44,6 +45,27 @@ def update_config(key: str, value: str) -> None:
 
 def print_config() -> None:
     print(f"Auth: {CONFIG_DATA['AUTH']}\nServer URI: {CONFIG_DATA['SERVER_URI']}")
+
+def input_loop(print_str: str, available_options: tuple[str]) -> str:
+    while True:
+        user_choice = input(f"{print_str}Enter q to exit\n")
+        if user_choice in available_options:
+            break
+        elif user_choice == "q":
+            exit(0)
+    return user_choice
+
+class MergeOptions(enum.Enum):
+    # Main merge options
+    manual    = 0
+    replace   = 1
+    overwrite = 2
+    append    = 3
+    # Auxiliary options to handle merge
+    y = 0
+    N = 0
+    o = 2
+    a = 3
 
 class NexusRawDownload():
     def __init__(self, user: str, password: str, filter_options: tuple, config_path: str = CURRENT_PATH, force_download: bool = False) -> None:
@@ -234,18 +256,10 @@ class NexusRawUpload():
     @staticmethod
     def _prepare_merge(merge: str) -> int:
         if merge == "manual":
-            x = input("Replace package?[y/N]\n")
+            x = input_loop("Replace package?[y/N]\n", ("y", "N"))
             if x == "y":
-                return 1
-            return 0
-        elif merge == "replace":
-            return 1
-        elif merge == "overwrite":
-            return 2
-        elif merge == "append":
-            return 3
-        log("Wrong merge method")
-        exit(1)
+                return MergeOptions.replace
+        return MergeOptions[merge]
     
     # Checks if server is up
     def check_server(self) -> None:
@@ -300,29 +314,16 @@ class NexusRawUpload():
 
     # Handle merge logic & user questions
     def _handle_merge(self, comp_id: str | None, comp_name: str | None) -> bool:
-        if self.merge == 0: # Manual
-            if comp_id == None:
-                return True
-            tmp = input(f"Overwrite {comp_name}?[y/o/a/N]\n")
-            if tmp == "y":
-                return True
-            elif tmp == "o":
-                self.merge = 2
-                return True
-            elif tmp == "a":
-                self.merge = 3
-                if comp_id == None:
-                    return True
-                return False
-            elif tmp == "N":
-                return False
-        elif self.merge == 1: # Replace: upload all files
+        if  (self.merge == MergeOptions.manual and comp_id == None) or \
+             self.merge == MergeOptions.replace or \
+             self.merge == MergeOptions.overwrite or \
+            (self.merge == MergeOptions.append and comp_id == None):
             return True
-        elif self.merge == 2: # Overwrite: upload all files
-            return True
-        elif self.merge == 3: # Append: upload if comp_id == None
-            if comp_id == None:
-                return True
+        elif self.merge == MergeOptions.manual:
+            tmp = input_loop(f"Overwrite {comp_name}?[y/o/a/N]\n", ("y", "o", "a", "N"))
+            self.merge = MergeOptions[tmp]
+            return True if tmp == "y" or tmp == "o" else False
+        else:
             return False
 
     # Get component from repository
@@ -401,75 +402,66 @@ def check_arguments(args):
             exit(1)
 
 def get_arguments():
-    parser = ArgumentParser(description="Script for download & upload binary dependencies.")
-    parser.add_argument('command', metavar='COMMAND', help="One of the following commands: download, upload, config.", type=str, nargs='?', choices=["download", "upload", "config"])
-    parser.add_argument("-a", "--auth", help="Nexus user credentials <USER>:<PASSWORD>.", type=str, required=False, default="")
-    # Upload arguments
-    parser.add_argument("-v", "--version", help="Version tag.", type=str, required=False)
-    parser.add_argument("-p", "--path", help="Path to project that will be uploaded.", type=str, required=False)
-    parser.add_argument("-m", "--merge", help="Merge argument.", type=str, required=False, choices=["manual", "replace", "overwrite", "append"],default="manual")
-    # Download arguments
-    parser.add_argument("-fp", "--platform", help="Download platform filter.", type=str, required=False, default="")
-    parser.add_argument("-fa", "--architecture", help="Download architecture filter.", type=str, required=False, default="")
-    parser.add_argument("-ft", "--target", help="Download target filter.", type=str, required=False, default="")
-    parser.add_argument("-e", "--external_config", help="Path to external.config directory.", type=str, required=False, default="")
-    parser.add_argument("-r", "--recursive", help="Do recursive download.", required=False, action="store_true")
-    parser.add_argument("-fd", "--force_download", help="Replaces all files when downloading.", required=False, action="store_true")
-    # Configure arguments
-    parser.add_argument("-ca", "--config_auth", help="Configure auth credentials.", type=str, required=False, default="")
-    parser.add_argument("-cs", "--config_server", help="Configure server uri.", type=str, required=False, default="http://localhost:8081")
-    parser.add_argument("-cp", "--config_print", help="Prints current config settings.", required=False, action="store_true")
-    return parser.parse_args()
+    main_parser = ArgumentParser(description="Script for download & upload binary dependencies.")
+    sub_parsers = main_parser.add_subparsers(help="Commands help.", dest='command', required=True)
+
+    upload_parser = sub_parsers.add_parser("upload", help="Upload projects to Nexus repositories")
+    upload_parser.add_argument("-a", "--auth", help="Nexus user credentials.", metavar="USER:PASSWORD", type=str, required=False, default="")
+    upload_parser.add_argument("-v", "--version", help="Version tag.", type=str, required=True)
+    upload_parser.add_argument("-p", "--path", help="Path to project that will be uploaded.", type=str, required=True)
+    upload_parser.add_argument("-m", "--merge", help="Merge argument.", type=str, required=False, choices=["manual", "replace", "overwrite", "append"], default="manual")
+
+    download_parser = sub_parsers.add_parser("download", help="Download projects from Nexus repositories")
+    download_parser.add_argument("-a", "--auth", help="Nexus user credentials.", metavar="USER:PASSWORD", type=str, required=False, default="")
+    download_parser.add_argument("-e", "--external-config", help="Path to external.config directory.", type=str, required=False, default="")
+    download_parser.add_argument("-p", "--platform", help="Download platform filter.", type=str, required=False, default="")
+    download_parser.add_argument("-t", "--target", help="Download target filter.", type=str, required=False, default="")
+    download_parser.add_argument("-r", "--recursive", help="Do recursive download.", required=False, action="store_true")
+    download_parser.add_argument("-f", "--force", help="Replaces all files when downloading.", required=False, action="store_true")
+
+    config_parser = sub_parsers.add_parser("config", help="Configure settings")
+    config_parser.add_argument("-a", "--auth", help="Configure auth credentials.", metavar="USER:PASSWORD", type=str, required=False, default="")
+    config_parser.add_argument("-s", "--server", help="Configure server uri.", type=str, required=False, default="http://localhost:8081")
+    config_parser.add_argument("-p", "--print", help="Prints current config settings.", required=False, action="store_true")
+    return main_parser.parse_args()
 
 def main() -> None:
     args = get_arguments()
     check_arguments(args)
     if args.command == "download":
-        if not args.auth:
-            p = NexusRawDownload(
-                user=CONFIG_DATA["AUTH"].split(":")[0],
-                password=CONFIG_DATA["AUTH"].split(":")[1],
-                filter_options=(args.platform, args.architecture, args.target),
-                config_path=args.external_config,
-                force_download=args.force_download
-            )
-        else:
-            p = NexusRawDownload(
-                user=args.auth.split(":")[0],
-                password=args.auth.split(":")[1],
-                filter_options=(args.platform, args.architecture, args.target),
-                config_path=args.external_config,
-                force_download=args.force_download
-            )
+        user_val = args.auth.split(":")[0] if args.auth else CONFIG_DATA["AUTH"].split(":")[0]
+        pass_val = args.auth.split(":")[1] if args.auth else CONFIG_DATA["AUTH"].split(":")[1]
+        platform = args.platform if len(args.platform.split("-")) == 1 else "-".join(args.platform.split("-")[:-1])
+        architecture = "" if len(args.platform.split("-")) == 1 else args.platform.split("-")[-1]
+        p = NexusRawDownload(
+            user=user_val,
+            password=pass_val,
+            filter_options=(platform, architecture, args.target),
+            config_path=args.external_config,
+            force_download=args.force
+        )
         if args.recursive:
             p.start_recursive()
         else:
             p.start()
     elif args.command == "upload":
-        if not args.auth:
-            p = NexusRawUpload(
-                user=CONFIG_DATA["AUTH"].split(":")[0],
-                password=CONFIG_DATA["AUTH"].split(":")[1],
-                path=args.path,
-                version=args.version,
-                merge=args.merge
-            )
-        else:
-            p = NexusRawUpload(
-                user=args.auth.split(":")[0],
-                password=args.auth.split(":")[1],
-                path=args.path,
-                version=args.version,
-                merge=args.merge
-            )
+        user_val = args.auth.split(":")[0] if args.auth else CONFIG_DATA["AUTH"].split(":")[0]
+        pass_val = args.auth.split(":")[1] if args.auth else CONFIG_DATA["AUTH"].split(":")[1]
+        p = NexusRawUpload(
+            user=user_val,
+            password=pass_val,
+            path=args.path,
+            version=args.version,
+            merge=args.merge
+        )
         p.start()
     elif args.command == "config":
-        if args.config_print:
-            print_config()
-        if args.config_auth:
+        if args.auth:
             update_config("AUTH", args.config_auth)
-        if args.config_server:
+        if args.server:
             update_config("SERVER_URI", args.config_server)
+        if args.print:
+            print_config()
 
 if __name__ == "__main__":
     main()
