@@ -12,11 +12,9 @@ nexmanager <COMMAND> [FLAGS]
 | config       | Configure auth and server uri                      |
 ### Flags
 ```diff
-# General flags:
+# Upload flags:
 -a --auth (Optional if credentials saved to config)
 Nexus user credentials. Format: <USER>:<PASSWORD>
-
-# Upload flags:
 -v --version (Required for this command)
 Project version tag.
 -p --path (Required for this command)
@@ -29,25 +27,25 @@ Merge parameter
   append    - Upload only new files
 
 # Download flags:
--fp --platform (Optional)
+-a --auth (Optional if credentials saved to config)
+Nexus user credentials. Format: <USER>:<PASSWORD>
+-p --platform (Optional)
 Filters downloading components by platform if provided
--fa --architecture (Optional)
-Filters downloading components by architecture if provided
--ft --target (Optional)
+-t --target (Optional)
 Filters downloading components by target if provided
 -e --external_config (Optional)
 Path to external.config directory, current directory by default
 -r --recursive (Optional)
 Do recursive download if provided
--fd --force_download (Optional)
+-f --force (Optional)
 Replaces all files
 
 # Config flags: (One of them required for this command)
--ca --config_auth
+-a --auth
 Configure auth credentials
--cs -- config_server
+-s -- server
 Configure server uri
--cp --config_print
+-p --print
 Prints current config settings
 ```
 ## Repositories structure
