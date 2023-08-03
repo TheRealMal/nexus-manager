@@ -10,6 +10,14 @@ nexmanager <COMMAND> [FLAGS]
 | upload       | Upload project version                             |
 | download     | Download versions of projects from external.config |
 | config       | Configure auth and server uri                      |
+### external.config structure
+By default scripts searchs for external.config in current directory, but you can specify it by using flag --external-config
+```
+<project_name1> <version1>
+# Comment
+<project_name2> <version2> # Comment
+...
+```
 ### Flags
 ```diff
 # Upload flags:
@@ -33,7 +41,7 @@ Nexus user credentials. Format: <USER>:<PASSWORD>
 Filters downloading components by platform if provided
 -t --target (Optional)
 Filters downloading components by target if provided
--e --external_config (Optional)
+-e --external-config (Optional)
 Path to external.config directory, current directory by default
 -r --recursive (Optional)
 Do recursive download if provided

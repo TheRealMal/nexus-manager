@@ -386,7 +386,7 @@ def check_arguments(args):
     if not args.command:
         print("Error, provide one of following commands: download, upload, config")
         exit(1)
-    if not args.auth and CONFIG_DATA["AUTH"] == "" and (args.command != "config" and not args.config_print):
+    if not args.auth and CONFIG_DATA["AUTH"] == "" and (args.command != "config" and not args.print):
         print("Error, provide auth credentials or update config")
         exit(1)
     if args.command == "upload":
@@ -397,8 +397,8 @@ def check_arguments(args):
             print("Error, provide path to project using --path")
             exit(1)
     elif args.command == "config":
-        if not args.auth and not args.server:
-            print("Error, provide new auth (--config_auth) or new server uri (--config_server)")
+        if not args.auth and not args.server and not args.print:
+            print("Error, provide new auth (--auth) or new server uri (--server)")
             exit(1)
 
 def get_arguments():
@@ -421,7 +421,7 @@ def get_arguments():
 
     config_parser = sub_parsers.add_parser("config", help="Configure settings")
     config_parser.add_argument("-a", "--auth", help="Configure auth credentials.", metavar="USER:PASSWORD", type=str, required=False, default="")
-    config_parser.add_argument("-s", "--server", help="Configure server uri.", type=str, required=False, default="http://localhost:8081")
+    config_parser.add_argument("-s", "--server", help="Configure server uri.", type=str, required=False, default="")
     config_parser.add_argument("-p", "--print", help="Prints current config settings.", required=False, action="store_true")
     return main_parser.parse_args()
 
@@ -457,9 +457,9 @@ def main() -> None:
         p.start()
     elif args.command == "config":
         if args.auth:
-            update_config("AUTH", args.config_auth)
+            update_config("AUTH", args.auth)
         if args.server:
-            update_config("SERVER_URI", args.config_server)
+            update_config("SERVER_URI", args.server)
         if args.print:
             print_config()
 
