@@ -397,7 +397,7 @@ def check_arguments(args):
             print("Error, provide path to project using --path")
             exit(1)
     elif args.command == "config":
-        if not args.config_auth and not args.config_server:
+        if not args.auth and not args.server:
             print("Error, provide new auth (--config_auth) or new server uri (--config_server)")
             exit(1)
 
