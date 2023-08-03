@@ -4,20 +4,20 @@ Sonatype Nexus Raw repositories manager
 ```console
 nexmanager <COMMAND> [FLAGS]
 ```
-## Commands
-| Command name | Utility                                            |
-|--------------|----------------------------------------------------|
-| upload       | Upload project version                             |
-| download     | Download versions of projects from external.config |
-| config       | Configure auth and server uri                      |
 ### external.config structure
-By default scripts searchs for external.config in current directory, but you can specify it by using flag --external-config
+By default **download** script searchs for `external.config` in current directory, but you can specify it by using flag `--external-config`
 ```
 <project_name1> <version1>
 # Comment
 <project_name2> <version2> # Comment
 ...
 ```
+## Commands
+| Command name | Utility                                            |
+|--------------|----------------------------------------------------|
+| upload       | Upload project version                             |
+| download     | Download versions of projects from external.config |
+| config       | Configure auth and server uri                      |
 ### Flags
 ```diff
 # Upload flags:
