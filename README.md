@@ -6,7 +6,8 @@ Downloads projects versions from external.config file & Uploads project version 
 nexmanager <COMMAND> [FLAGS]
 ```
 ### external.config structure
-By default **download** script searchs for `external.config` in current directory, but you can specify it by using flag `--external-config`
+By default **download** script searchs for `external.config` in current directory, but you can specify it by using flag `--external-config`.  
+You can create such file using `touch external.config` and fill it via `VIM` or use another tools to reach that goal
 ```
 <project_name1> <version1>
 # Comment
