@@ -58,21 +58,26 @@ Configure server uri
 Prints current config settings
 ```
 ## Repositories structure
+Repository must be created by user via web interface, because sonatype nexus API does not support repository creation.
 ```console
-${projectName1}
-	${projectName1}-${versionTag}
-		${projectName1}
-			${platform}-${architecture}-${target}
-				directory1
-				file1
-				file2
+${project_name1} <- Repository name (Same as project name)
+	${project_name1}-${version_tag} <- Project name w/ version tag
+		${project_name1}
+			${platform}-${architecture}-${target} <- Build params
+				example_directory1
+				example_file1
+				example_file2
 				...
-${projectName2}
+${project_name2}
 	...
 ```
 ## Build and setup whl file
+Go to nexus-manager directory and run this command to build `.whl` file
 ```console
 python3 setup.py bdist_wheel
+```
+Build `.whl` file or download it from `Releases` section, go to directory with that file and run command in such format to install tool
+```console
 pip install Nexus_Manager-<version>-<params>.whl
 ```
 ## TODO
