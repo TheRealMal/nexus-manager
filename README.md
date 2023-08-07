@@ -1,5 +1,6 @@
 # Nexus Manager
-Sonatype Nexus Raw repositories manager
+Sonatype Nexus Raw repositories manager.  
+Downloads projects versions from external.config file & Uploads project version to Sonatype Nexus repository.
 ## Usage
 ```console
 nexmanager <COMMAND> [FLAGS]
